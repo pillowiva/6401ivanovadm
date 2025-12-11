@@ -1,22 +1,32 @@
 import sys
 import os
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
-from implementation.image_processing import ImageProcessing
+from lab1.implementation import ImageProcessing
 import argparse, time
 from PIL import Image
 import numpy as np
+import asyncio
+
+# Добавляем импорт асинхронного процессора
+# Предполагается, что файл с AsyncCatImageProcessor называется async_processor.py
+from lab4.processor.image_processor import AsyncCatImageProcessor, async_main
+
 
 def load(path):
     arr = np.array(Image.open(path).convert("RGB"))
     return arr
 
+
 def save(path, arr):
     Image.fromarray(arr).save(path)
+
 
 def default_name(path, op):
     import os
     base, ext = os.path.splitext(path)
-    return f"{base}_{op}.png"
+    return f"{base}_{op}.png"  # Исправлено: убрана константа 2
+
 
 def main():
     p = argparse.ArgumentParser(prog="imageprocessing")
@@ -42,10 +52,29 @@ def main():
                                "box_blur", "motion_blur"],
                       help="Тип ядра для свертки")
 
-    p.add_argument("input_path")
+    # ДОБАВЛЯЕМ НОВУЮ КОМАНДУ ДЛЯ АСИНХРОННОЙ ОБРАБОТКИ КОТИКОВ
+    async_cmd = sub.add_parser("async_cats")
+    async_cmd.add_argument("--limit", type=int, default=5,
+                           help="Количество изображений для загрузки")
+    async_cmd.add_argument("--output-dir", type=str, default="async_cats_processed",
+                           help="Директория для сохранения")
+
+    p.add_argument("input_path", nargs="?")  # Делаем необязательным для async_cats
     p.add_argument("output_path", nargs="?")
 
     args = p.parse_args()
+
+    # Для команды async_cats не нужен input_path
+    if args.cmd == "async_cats":
+        print("Запуск асинхронной обработки изображений котиков...")
+        asyncio.run(async_main(limit=args.limit, output_dir=args.output_dir))
+        return
+
+    # Для остальных команд проверяем наличие input_path
+    if not hasattr(args, 'input_path') or not args.input_path:
+        print("Ошибка: для этой команды требуется input_path")
+        return
+
     img = load(args.input_path)
     proc = ImageProcessing()
 
@@ -53,16 +82,16 @@ def main():
     if args.cmd == "grayscale":
         out = proc._rgb_to_grayscale(img)
     elif args.cmd == "gamma":
-        out = proc._gamma_correction(proc._rgb_to_grayscale(img) if img.ndim == 3 else img, args.value)
+        out = proc._gamma_correction(img, args.value)
     elif args.cmd == "sobel":
         out = proc.edge_detection(img)
     elif args.cmd == "harris":
-        out = proc.corner_detection(img)
+        out = proc.corner_detection(img, k=args.k, threshold=args.thr)
     elif args.cmd == "hough":
         if not args.max_radius:
             hgt, wdt = (img.shape[0], img.shape[1]) if img.ndim == 2 else (img.shape[0], img.shape[1])
             args.max_radius = min(hgt, wdt) // 4
-        out = proc.circle_detection(img)
+        out = proc.circle_detection(img, min_radius=args.min_radius, max_radius=args.max_radius, step=args.step)
     elif args.cmd == "convolution":
         out = proc.apply_color_convolution(img, args.kernel)
     dt = time.perf_counter() - t0
@@ -70,6 +99,7 @@ def main():
 
     out_path = args.output_path or default_name(args.input_path, args.cmd)
     save(out_path, out)
+
 
 if __name__ == "__main__":
     main()
