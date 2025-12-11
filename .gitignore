@@ -1,2 +1,5 @@
 .venv/
 .config/
+lab2/processed_images/
+lab1/test_images/
+lab4/async_processed_images/
